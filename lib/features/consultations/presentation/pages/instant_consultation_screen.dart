@@ -688,6 +688,15 @@ class _InstantConsultationScreenState extends State<InstantConsultationScreen> {
   }
 
   Future<void> _openConsultation(ConsultationModel consultation, String currentUserId) async {
+    final doctorUid = consultation.doctorId?.trim() ?? '';
+    final patientUid = consultation.userId.trim();
+    if (doctorUid.isEmpty || patientUid.isEmpty || consultation.id.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر فتح الاستشارة: بيانات الطبيب أو المريض غير مكتملة')),
+      );
+      return;
+    }
+
     // تحديث الحالة عند فتح المحادثة
     await _firestore.collection('consultations').doc(consultation.id).update({
       'hasNewMessage': false,
@@ -699,8 +708,8 @@ class _InstantConsultationScreenState extends State<InstantConsultationScreen> {
     Navigator.push(context, MaterialPageRoute(builder: (_) =>
         ConsultationScreen(
           consultationId: consultation.id,
-          doctorUid: consultation.doctorId ?? '',
-          patientUid: consultation.userId,
+          doctorUid: doctorUid,
+          patientUid: patientUid,
           doctorName: consultation.doctorName ?? '',
           patientName: consultation.userName ?? '',
           doctorImage: consultation.doctorImage ?? '',
@@ -713,6 +722,10 @@ class _InstantConsultationScreenState extends State<InstantConsultationScreen> {
   Future<void> _startConsultation(UserModel doctor) async {
     final user = _auth.currentUser;
     if (user == null) return;
+    if (doctor.uid.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تعذر بدء الاستشارة: بيانات الطبيب غير مكتملة')));
+      return;
+    }
     try {
       final userDataDoc = await _firestore.collection('users').doc(user.uid).get();
       final userData = userDataDoc.data() ?? {};
