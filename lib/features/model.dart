@@ -468,8 +468,8 @@ class ConsultationModel {
     return ConsultationModel(
       id: doc.id,
       type: data['type'] as String? ?? 'group',
-      doctorId: data['doctorId'] as String?,
-      userId: data['userId'] as String? ?? '',
+      doctorId: data['doctorId']?.toString().trim(),
+      userId: data['userId']?.toString().trim() ?? '',
       message: data['message'] as String?,
       createdAt: _parseTimestamp(data['createdAt']),
       lastMessageTime: _parseOptionalTimestamp(data['lastMessageTime']),
@@ -512,6 +512,8 @@ class ConsultationModel {
       'unreadCount': unreadCount,
     };
   }
+
+  bool get hasValidParticipants => (doctorId?.trim().isNotEmpty ?? false) && userId.trim().isNotEmpty;
 
   bool get isInstant => type == 'instant';
   bool get isGroup => type == 'group';

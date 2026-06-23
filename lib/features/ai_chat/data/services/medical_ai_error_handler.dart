@@ -15,7 +15,7 @@ class MedicalAiErrorHandler {
     if (error is DioException) {
       final status = error.response?.statusCode;
       if (status == 503 || status == 502 || status == 504 || text.contains('unavailable') || text.contains('high demand')) {
-        return 'الخدمة مشغولة حالياً، يرجى المحاولة بعد قليل.';
+        return 'فشل مزود الذكاء الاصطناعي مؤقتاً. التفاصيل: ${error.response?.data ?? error.message}';
       }
       if (status == 400 || text.contains('invalid argument')) {
         return 'يرجى توضيح سؤالك بشكل أكبر حتى أتمكن من مساعدتك.';
@@ -23,14 +23,14 @@ class MedicalAiErrorHandler {
       if (status == 408 || error.type == DioExceptionType.connectionTimeout || error.type == DioExceptionType.receiveTimeout || error.type == DioExceptionType.sendTimeout) {
         return 'يبدو أن الاتصال بطيء، يرجى المحاولة مرة أخرى.';
       }
-      if (status != null && status >= 500) return 'الخدمة مشغولة حالياً، يرجى المحاولة بعد قليل.';
+      if (status != null && status >= 500) return 'فشل مزود الذكاء الاصطناعي (HTTP $status). التفاصيل: ${error.response?.data ?? error.message}';
     }
     if (text.contains('503') || text.contains('unavailable') || text.contains('high demand') || text.contains('overloaded')) {
-      return 'الخدمة مشغولة حالياً، يرجى المحاولة بعد قليل.';
+      return 'فشل مزود الذكاء الاصطناعي. التفاصيل: ${error.toString()}';
     }
     if (text.contains('400') || text.contains('bad request') || text.contains('تعذر فهم')) {
       return 'يرجى توضيح سؤالك بشكل أكبر حتى أتمكن من مساعدتك.';
     }
-    return 'حدث أمر غير متوقع، يرجى المحاولة مرة أخرى لاحقاً.';
+    return 'حدث خطأ غير متوقع: ${error.toString()}';
   }
 }
