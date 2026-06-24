@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -9,10 +8,8 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../data/models/ai_chat_message.dart';
-import '../../data/models/medical_intake.dart';
 import '../../data/repositories/medical_ai_repository.dart';
 import '../../data/services/medical_ai_api_service.dart';
 import '../providers/medical_ai_chat_provider.dart';
@@ -25,70 +22,31 @@ class MedicalAiChatScreen extends StatefulWidget {
 }
 
 class _MedicalAiChatScreenState extends State<MedicalAiChatScreen> {
-  static const String _savedIntakeKey = 'medical_ai_saved_intake';
-
-  final _formKey = GlobalKey<FormState>();
-  final _problem = TextEditingController();
-  final _started = TextEditingController();
-  final _age = TextEditingController();
   final _message = TextEditingController();
   final _scrollController = ScrollController();
   final _messageFocus = FocusNode();
 
-  String _gender = 'ذكر';
-  String _severity = 'متوسطة';
-  MedicalIntake? _intake;
-  bool _isLoadingSavedIntake = true;
   String? _selectedImagePath;
 
   @override
   void initState() {
     super.initState();
-    _loadSavedIntake();
+
   }
 
   @override
   void dispose() {
-    _problem.dispose();
-    _started.dispose();
-    _age.dispose();
     _message.dispose();
     _scrollController.dispose();
     _messageFocus.dispose();
     super.dispose();
   }
 
-  Future<void> _loadSavedIntake() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_savedIntakeKey);
-    if (raw != null && raw.isNotEmpty) {
-      try {
-        final intake = MedicalIntake.fromMap(jsonDecode(raw) as Map<String, dynamic>);
-        if (intake.problem.trim().isNotEmpty && mounted) {
-          setState(() => _intake = intake);
-        }
-      } catch (_) {
-        await prefs.remove(_savedIntakeKey);
-      }
-    }
-    if (mounted) setState(() => _isLoadingSavedIntake = false);
-  }
-
-  Future<void> _saveIntake(MedicalIntake intake) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_savedIntakeKey, jsonEncode(intake.toMap()));
-  }
-
   Future<void> _startNewChat(BuildContext providerContext) async {
-    await providerContext.read<MedicalAiChatProvider>().clearMessages();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_savedIntakeKey);
+    await providerContext.read<MedicalAiChatProvider>().createNewConversation();
     if (!mounted) return;
-    _problem.clear();
-    _started.clear();
-    _age.clear();
     _message.clear();
-    setState(() => _intake = null);
+    setState(() => _selectedImagePath = null);
   }
 
   void _scrollToBottom() {
@@ -103,18 +61,17 @@ class _MedicalAiChatScreenState extends State<MedicalAiChatScreen> {
   }
 
   Future<void> _sendMessage(MedicalAiChatProvider provider) async {
-    final intake = _intake;
     final text = _message.text.trim();
-    if (intake == null || provider.isLoading) return;
+    if (provider.isLoading) return;
     if (text.isEmpty && _selectedImagePath == null) return;
     final selectedImage = _selectedImagePath;
     _message.clear();
     setState(() => _selectedImagePath = null);
     _scrollToBottom();
     if (selectedImage != null) {
-      await provider.sendAttachment(intake, selectedImage, 'image', description: text.isEmpty ? 'يرجى تحليل الصورة المرفقة.' : text);
+      await provider.sendAttachment(selectedImage, 'image', description: text.isEmpty ? 'يرجى تحليل الصورة المرفقة.' : text);
     } else {
-      await provider.send(intake, text);
+      await provider.send(text);
     }
     _scrollToBottom();
     _messageFocus.requestFocus();
@@ -125,11 +82,11 @@ class _MedicalAiChatScreenState extends State<MedicalAiChatScreen> {
     return ChangeNotifierProvider(
       create: (_) => MedicalAiChatProvider(
         MedicalAiRepository(apiService: MedicalAiApiService()),
-      )..loadLocalHistory(),
+      )..loadConversations(),
       child: FutureBuilder<bool>(
         future: UserRoleService.isPatient(),
         builder: (context, roleSnapshot) {
-          if (roleSnapshot.connectionState == ConnectionState.waiting || _isLoadingSavedIntake) {
+          if (roleSnapshot.connectionState == ConnectionState.waiting) {
             return const Scaffold(body: Center(child: CircularProgressIndicator()));
           }
           if (roleSnapshot.data != true) {
@@ -155,57 +112,25 @@ class _MedicalAiChatScreenState extends State<MedicalAiChatScreen> {
                 ),
                 title: const Text('مساعد نبض AI'),
                 actions: [
+                  Builder(
+                    builder: (context) => IconButton(
+                      tooltip: 'المحادثات السابقة',
+                      onPressed: () => Scaffold.of(context).openDrawer(),
+                      icon: const Icon(Icons.history_rounded),
+                    ),
+                  ),
                   IconButton(
-                    tooltip: 'مسح المحادثة',
-                    onPressed: provider.messages.isEmpty && _intake == null ? null : () => _startNewChat(context),
-                    icon: const Icon(Icons.delete_sweep_rounded),
+                    tooltip: 'محادثة جديدة',
+                    onPressed: provider.isLoading ? null : () => _startNewChat(context),
+                    icon: const Icon(Icons.add_rounded),
                   ),
                 ],
               ),
-              body: SafeArea(child: _intake == null ? _buildIntake(context, provider) : _buildChat(context, provider)),
+              drawer: _ConversationsDrawer(provider: provider),
+              body: SafeArea(child: _buildChat(context, provider)),
             ),
           );
         },
-      ),
-    );
-  }
-
-  Widget _buildIntake(BuildContext context, MedicalAiChatProvider provider) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Form(
-      key: _formKey,
-      child: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          Icon(Icons.auto_awesome_rounded, size: 48, color: colorScheme.primary),
-          const SizedBox(height: 12),
-          Text('لنبدأ بسياق طبي مختصر', textAlign: TextAlign.center, style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w900)),
-          const SizedBox(height: 20),
-          TextFormField(controller: _problem, decoration: const InputDecoration(labelText: 'ما المشكلة أو الأعراض؟', prefixIcon: Icon(Icons.sick_outlined)), validator: _required),
-          const SizedBox(height: 12),
-          TextFormField(controller: _started, decoration: const InputDecoration(labelText: 'متى بدأت؟', prefixIcon: Icon(Icons.schedule_rounded)), validator: _required),
-          const SizedBox(height: 12),
-          TextFormField(controller: _age, decoration: const InputDecoration(labelText: 'العمر', prefixIcon: Icon(Icons.cake_outlined)), keyboardType: TextInputType.number, validator: (v) { final n = int.tryParse(v ?? ''); return n == null || n <= 0 ? 'أدخل عمر صحيح' : null; }),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<String>(value: _gender, decoration: const InputDecoration(labelText: 'الجنس', prefixIcon: Icon(Icons.wc_rounded)), items: ['ذكر', 'أنثى'].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(), onChanged: (v) => setState(() => _gender = v!)),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<String>(value: _severity, decoration: const InputDecoration(labelText: 'شدة الحالة', prefixIcon: Icon(Icons.monitor_heart_outlined)), items: ['خفيفة', 'متوسطة', 'شديدة', 'طارئة'].map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(), onChanged: (v) => setState(() => _severity = v!)),
-          const SizedBox(height: 24),
-          FilledButton.icon(
-            onPressed: provider.isLoading ? null : () async {
-              if (!_formKey.currentState!.validate()) return;
-              final intake = MedicalIntake(problem: _problem.text.trim(), symptomStart: _started.text.trim(), age: int.parse(_age.text.trim()), gender: _gender, duration: '', severity: _severity);
-              await provider.clearMessages();
-              await _saveIntake(intake);
-              if (!mounted) return;
-              setState(() => _intake = intake);
-              await provider.buildInitialRecommendation(intake);
-              _scrollToBottom();
-            },
-            icon: provider.isLoading ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.auto_awesome),
-            label: const Text('ابدأ المحادثة'),
-          ),
-        ],
       ),
     );
   }
@@ -233,7 +158,7 @@ class _MedicalAiChatScreenState extends State<MedicalAiChatScreen> {
                     return _MessageBubble(
                       message: provider.messages[i],
                       onDelete: () => _confirmDeleteMessage(context, provider, provider.messages[i]),
-                      onResend: provider.messages[i].isUser ? () => provider.resend(_intake!, provider.messages[i]) : null,
+                      onResend: provider.messages[i].isUser ? () => provider.resend(provider.messages[i]) : null,
                     );
                   },
                 ),
@@ -246,8 +171,7 @@ class _MedicalAiChatScreenState extends State<MedicalAiChatScreen> {
           onRemoveImage: () => setState(() => _selectedImagePath = null),
           onSend: () => _sendMessage(provider),
           onImage: () async {
-            final intake = _intake;
-            if (intake == null || provider.isLoading) return;
+            if (provider.isLoading) return;
             final x = await ImagePicker().pickImage(source: ImageSource.gallery);
             if (x != null) {
               setState(() => _selectedImagePath = x.path);
@@ -255,8 +179,7 @@ class _MedicalAiChatScreenState extends State<MedicalAiChatScreen> {
             }
           },
           onFile: () async {
-            final intake = _intake;
-            if (intake == null || provider.isLoading) return;
+            if (provider.isLoading) return;
             final f = await FilePicker.platform.pickFiles();
             final path = f?.files.single.path;
             if (path != null) {
@@ -271,7 +194,7 @@ class _MedicalAiChatScreenState extends State<MedicalAiChatScreen> {
                 setState(() => _selectedImagePath = path);
                 _messageFocus.requestFocus();
               } else {
-                await provider.sendAttachment(intake, path, 'file', description: _message.text);
+                await provider.sendAttachment(path, 'file', description: _message.text);
               }
               _scrollToBottom();
             }
@@ -308,8 +231,61 @@ class _MedicalAiChatScreenState extends State<MedicalAiChatScreen> {
       if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم حذف الرسالة')));
     }
   }
+}
 
-  String? _required(String? v) => v == null || v.trim().isEmpty ? 'هذا الحقل مطلوب' : null;
+
+
+class _ConversationsDrawer extends StatelessWidget {
+  const _ConversationsDrawer({required this.provider});
+
+  final MedicalAiChatProvider provider;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Drawer(
+      child: SafeArea(
+        child: Column(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.add_rounded),
+              title: const Text('محادثة جديدة'),
+              onTap: () async {
+                Navigator.pop(context);
+                await provider.createNewConversation();
+              },
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: provider.isLoadingConversations
+                  ? const Center(child: CircularProgressIndicator())
+                  : ListView.builder(
+                      itemCount: provider.conversations.length,
+                      itemBuilder: (context, index) {
+                        final conversation = provider.conversations[index];
+                        final selected = conversation.id == provider.activeConversationId;
+                        return ListTile(
+                          selected: selected,
+                          selectedTileColor: colorScheme.primaryContainer.withOpacity(.45),
+                          leading: Icon(selected ? Icons.chat_bubble_rounded : Icons.chat_bubble_outline_rounded),
+                          title: Text(conversation.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                          subtitle: Text(
+                            '${conversation.updatedAt.year}/${conversation.updatedAt.month}/${conversation.updatedAt.day}',
+                            textDirection: TextDirection.ltr,
+                          ),
+                          onTap: () async {
+                            Navigator.pop(context);
+                            await provider.openConversation(conversation.id);
+                          },
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _MessageBubble extends StatelessWidget {
