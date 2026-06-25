@@ -15,7 +15,7 @@ class SupportScreen extends StatelessWidget {
         title: const Text('الدعم الفني'),
         centerTitle: true,
         elevation: 2,
-        foregroundColor: Colors.blue,
+        foregroundColor: Theme.of(context).colorScheme.onSurface,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),

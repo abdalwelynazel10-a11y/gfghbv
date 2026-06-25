@@ -75,8 +75,8 @@ class _LocationPickerScreenState extends State<LocationPickerScreen> {
         actions: [
           TextButton.icon(
             onPressed: _save,
-            icon: Icon(Icons.check, color: scheme.onPrimary),
-            label: Text('حفظ', style: TextStyle(color: scheme.onPrimary)),
+            icon: Icon(Icons.check, color: scheme.primary),
+            label: Text('حفظ', style: TextStyle(color: scheme.primary)),
           ),
         ],
       ),

@@ -152,7 +152,7 @@ class NotificationsScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: isDarkMode ? Colors.grey[900] : Colors.white,
-        foregroundColor: Colors.blue,
+        foregroundColor: Theme.of(context).colorScheme.onSurface,
         elevation: 2,
         title: const Text('الإشعارات'),
         actions: [

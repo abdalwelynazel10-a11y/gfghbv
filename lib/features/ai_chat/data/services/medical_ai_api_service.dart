@@ -46,7 +46,7 @@ class MedicalAiApiService {
     String? apiKey,
     this.model = _geminiModel,
   })  : apiKey = apiKey ?? _resolveDefaultApiKey(),
-        _dio = dio ?? Dio();
+        _dio = dio ?? Dio(BaseOptions(connectTimeout: const Duration(seconds: 20), sendTimeout: const Duration(seconds: 30), receiveTimeout: const Duration(seconds: 45)));
 
   static String _resolveDefaultApiKey() {
     if (_geminiApiKey.trim().isNotEmpty) return _geminiApiKey.trim();
@@ -187,7 +187,7 @@ class MedicalAiApiService {
 
       final reply = _extractGeminiReply(response.data);
       if (reply.isEmpty) {
-        return 'يرجى توضيح سؤالك بشكل أكبر حتى أتمكن من مساعدتك.';
+        throw StateError('Gemini أعاد استجابة فارغة. راجع السجلات وتأكد من صلاحية النموذج والمفتاح.');
       }
       return reply;
     } on DioException catch (e) {
@@ -300,22 +300,19 @@ class MedicalAiApiService {
 
         final reply = _extractOpenRouterReply(response.data);
         if (reply.isEmpty) {
-          lastFriendlyError = 'يرجى توضيح سؤالك بشكل أكبر حتى أتمكن من مساعدتك.';
+          lastFriendlyError = 'OpenRouter أعاد استجابة فارغة للنموذج $openRouterModel. Response: ${response.data}';
           continue;
         }
         if (!_shouldTryFallback(reply)) return reply;
         lastFriendlyError = reply;
       } on DioException catch (e) {
         lastFriendlyError = _formatDioError(e, serviceName: 'OpenRouter');
-        if (!_shouldTryFallback(lastFriendlyError)) return lastFriendlyError;
       } on SocketException catch (e) {
         _debug('OpenRouter SocketException: $e');
         lastFriendlyError = MedicalAiErrorHandler.friendlyMessage(e);
-        if (!_shouldTryFallback(lastFriendlyError)) return lastFriendlyError;
       } catch (e) {
         _debug('OpenRouter Unknown Error: $e');
         lastFriendlyError = MedicalAiErrorHandler.friendlyMessage(e);
-        if (!_shouldTryFallback(lastFriendlyError)) return lastFriendlyError;
       }
     }
 

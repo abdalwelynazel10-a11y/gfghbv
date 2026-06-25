@@ -6,6 +6,9 @@ import 'package:dio/dio.dart';
 class MedicalAiErrorHandler {
   static String friendlyMessage(Object error) {
     final text = error.toString().toLowerCase();
+    if (error is StateError) {
+      return error.toString().replaceFirst('Bad state: ', '');
+    }
     if (error is SocketException || text.contains('socket') || text.contains('network') || text.contains('internet') || text.contains('connection refused')) {
       return 'تعذر الاتصال بالإنترنت، يرجى التحقق من الشبكة.';
     }

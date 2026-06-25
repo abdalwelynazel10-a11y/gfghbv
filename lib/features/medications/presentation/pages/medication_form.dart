@@ -236,7 +236,7 @@ class _MedicationFormScreenState extends State<MedicationFormScreen> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: isDarkMode ? Colors.grey[900] : Colors.white,
-        foregroundColor: Colors.blue,
+        foregroundColor: Theme.of(context).colorScheme.onSurface,
         elevation: 2,
         title: Text(isEditing ? 'تعديل الدواء' : 'إضافة دواء جديد'),
         centerTitle: true,

@@ -89,6 +89,78 @@ class _ProfileScreenState extends State<ProfileScreen> {
     await LogoutService.showLogoutConfirmationDialog(context);
   }
 
+
+  Future<void> _deleteAccount() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    final confirmTextController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('حذف الحساب نهائياً'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('سيتم حذف بياناتك من Firebase وتسجيل خروجك. هذا الإجراء لا يمكن التراجع عنه.'),
+            const SizedBox(height: 12),
+            const Text('اكتب DELETE للتأكيد:'),
+            const SizedBox(height: 8),
+            TextField(controller: confirmTextController, decoration: const InputDecoration(hintText: 'DELETE')),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('إلغاء')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+            onPressed: () => Navigator.pop(context, confirmTextController.text.trim() == 'DELETE'),
+            child: const Text('حذف الحساب'),
+          ),
+        ],
+      ),
+    );
+    confirmTextController.dispose();
+    if (confirmed != true) return;
+
+    try {
+      await _deleteFirestoreAccountData(user.uid);
+      await user.delete();
+      await _auth.signOut();
+      if (!mounted) return;
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم حذف الحساب بنجاح')));
+    } on FirebaseAuthException catch (e) {
+      final message = e.code == 'requires-recent-login'
+          ? 'يرجى تسجيل الخروج ثم تسجيل الدخول مرة أخرى قبل حذف الحساب لحماية أمانك.'
+          : 'تعذر حذف حساب المصادقة: ${e.message ?? e.code}';
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تعذر حذف الحساب: $e')));
+    }
+  }
+
+  Future<void> _deleteFirestoreAccountData(String uid) async {
+    final batch = _firestore.batch();
+    batch.delete(_firestore.collection('users').doc(uid));
+    final collections = <String, String>{
+      'appointments': 'userId',
+      'appointments_doctor': 'doctorId',
+      'consultations': 'userId',
+      'consultations_doctor': 'doctorId',
+      'medications': 'userId',
+      'medical_records': 'userId',
+      'notifications': 'userId',
+    };
+    for (final entry in collections.entries) {
+      final collection = entry.key.replaceAll('_doctor', '');
+      final snapshot = await _firestore.collection(collection).where(entry.value, isEqualTo: uid).limit(200).get();
+      for (final doc in snapshot.docs) {
+        batch.delete(doc.reference);
+      }
+    }
+    await batch.commit();
+  }
+
   Future<void> _openSupport() async {
     Navigator.push(
       context,
@@ -383,6 +455,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
             context,
             MaterialPageRoute(builder: (context) => const SettingsScreen()),
           ),
+        ),
+        _modernOptionTile(
+          icon: Icons.delete_forever_rounded,
+          title: 'حذف الحساب',
+          subtitle: 'حذف الحساب وبياناته من Firebase نهائياً',
+          onTap: _deleteAccount,
+          danger: true,
         ),
         _modernOptionTile(
           icon: Icons.logout_rounded,

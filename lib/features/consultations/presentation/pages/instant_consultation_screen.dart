@@ -64,7 +64,7 @@ class _InstantConsultationScreenState extends State<InstantConsultationScreen> {
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
         backgroundColor: theme.scaffoldBackgroundColor,
-        foregroundColor: colorScheme.primary,
+        foregroundColor: colorScheme.onSurface,
         elevation: 0,
         centerTitle: true,
         title: const Text('الاستشارة الفورية'),
@@ -72,10 +72,12 @@ class _InstantConsultationScreenState extends State<InstantConsultationScreen> {
       body: accountType == 'doctor'
           ? _buildPatientConsultations()
           : _buildPatientConsultationsForUser(),
-      floatingActionButton: FloatingActionButton(
-        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'group_consultation_fab',
         backgroundColor: colorScheme.primary,
-        onPressed: (){
+        foregroundColor: colorScheme.onPrimary,
+        onPressed: () {
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -84,7 +86,8 @@ class _InstantConsultationScreenState extends State<InstantConsultationScreen> {
           );
         },
         tooltip: 'الاستشارة الجماعية',
-        child: Icon(Icons.group, color: colorScheme.onPrimary),
+        icon: const Icon(Icons.groups_2_rounded),
+        label: const Text('الاستشارة الجماعية'),
       ),
     );
   }
