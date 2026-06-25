@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
 class GroupConsultationScreen extends StatefulWidget {
@@ -25,20 +26,33 @@ class _GroupConsultationScreenState extends State<GroupConsultationScreen> {
 
   bool _isSending = false;
   Map<String, dynamic>? _replyToMessage;
+  Set<String> _hiddenMessageIds = <String>{};
 
   List<PlatformFile> _selectedFiles = [];
   bool _cloudStorageBlocked = false;
 
   @override
+  void initState() {
+    super.initState();
+    _loadHiddenMessages();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDarkMode = theme.brightness == Brightness.dark;
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: isDarkMode? Colors.grey[900]: Colors.white,
-        foregroundColor: Colors.blue,
+        backgroundColor: theme.scaffoldBackgroundColor,
+        foregroundColor: theme.colorScheme.onSurface,
         title: const Text("الاستشارة الجماعية"),
-        elevation: 1,
+        elevation: 0,
+        actions: [
+          IconButton(
+            tooltip: 'حذف جميع المحادثات من جهازي',
+            onPressed: _confirmHideAllMessages,
+            icon: const Icon(Icons.delete_sweep_rounded),
+          ),
+        ],
       ),
       body: SafeArea(
         child: Column(
@@ -60,7 +74,7 @@ class _GroupConsultationScreenState extends State<GroupConsultationScreen> {
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
         final theme = Theme.of(context);
         final isDarkMode = theme.brightness == Brightness.dark;
-        final messages = snapshot.data!.docs;
+        final messages = snapshot.data!.docs.where((doc) => !_hiddenMessageIds.contains(doc.id)).toList();
 
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (_scrollController.hasClients) {
@@ -81,7 +95,7 @@ class _GroupConsultationScreenState extends State<GroupConsultationScreen> {
             final message = doc.data() as Map<String, dynamic>;
             final isMe = message['senderId'] == _auth.currentUser?.uid;
             return GestureDetector(
-              onLongPress: isMe ? () => _deleteMessage(doc.id) : null,
+              onLongPress: () => _confirmHideMessage(doc.id),
               onDoubleTap: () => setState(() => _replyToMessage = message),
               child: _buildMessageBubble(message, isMe, theme, isDarkMode),
             );
@@ -416,14 +430,66 @@ class _GroupConsultationScreenState extends State<GroupConsultationScreen> {
     }
   }
 
-  Future<void> _deleteMessage(String messageId) async {
-    await _firestore.collection("group_consultations").doc(messageId).delete();
+  Future<void> _loadHiddenMessages() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() => _hiddenMessageIds = (prefs.getStringList(_hiddenMessagesKey) ?? <String>[]).toSet());
+  }
+
+  String get _hiddenMessagesKey => 'group_consultations_hidden_${_auth.currentUser?.uid ?? 'guest'}';
+
+  Future<void> _saveHiddenMessages() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_hiddenMessagesKey, _hiddenMessageIds.toList());
+  }
+
+  Future<void> _confirmHideMessage(String messageId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('حذف المحادثة من جهازك؟'),
+        content: const Text('سيتم إخفاء هذه الرسالة من جهازك فقط ولن تتأثر أجهزة المستخدمين الآخرين.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('إلغاء')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('حذف')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() => _hiddenMessageIds.add(messageId));
+    await _saveHiddenMessages();
+  }
+
+  Future<void> _confirmHideAllMessages() async {
+    final snapshot = await _firestore.collection("group_consultations").get();
+    if (!mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('حذف جميع المحادثات من جهازك؟'),
+        content: const Text('سيتم إخفاء رسائل الاستشارة الجماعية الحالية من جهازك فقط بدون حذفها من Firebase أو من أجهزة الآخرين.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('إلغاء')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('حذف الكل')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() => _hiddenMessageIds.addAll(snapshot.docs.map((doc) => doc.id)));
+    await _saveHiddenMessages();
   }
 
   void _openFile(String url) async {
     if (await canLaunchUrl(Uri.parse(url))) {
       await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
     }
+  }
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    _scrollController.dispose();
+    super.dispose();
   }
 
   String _formatTimestamp(dynamic timestamp) {

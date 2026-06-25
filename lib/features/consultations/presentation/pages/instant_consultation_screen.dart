@@ -64,7 +64,7 @@ class _InstantConsultationScreenState extends State<InstantConsultationScreen> {
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
         backgroundColor: theme.scaffoldBackgroundColor,
-        foregroundColor: colorScheme.primary,
+        foregroundColor: colorScheme.onSurface,
         elevation: 0,
         centerTitle: true,
         title: const Text('الاستشارة الفورية'),
@@ -72,10 +72,12 @@ class _InstantConsultationScreenState extends State<InstantConsultationScreen> {
       body: accountType == 'doctor'
           ? _buildPatientConsultations()
           : _buildPatientConsultationsForUser(),
-      floatingActionButton: FloatingActionButton(
-        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'group_consultation_fab',
         backgroundColor: colorScheme.primary,
-        onPressed: (){
+        foregroundColor: colorScheme.onPrimary,
+        onPressed: () {
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -84,7 +86,8 @@ class _InstantConsultationScreenState extends State<InstantConsultationScreen> {
           );
         },
         tooltip: 'الاستشارة الجماعية',
-        child: Icon(Icons.group, color: colorScheme.onPrimary),
+        icon: const Icon(Icons.groups_2_rounded),
+        label: const Text('الاستشارة الجماعية'),
       ),
     );
   }
@@ -688,6 +691,15 @@ class _InstantConsultationScreenState extends State<InstantConsultationScreen> {
   }
 
   Future<void> _openConsultation(ConsultationModel consultation, String currentUserId) async {
+    final doctorUid = consultation.doctorId?.trim() ?? '';
+    final patientUid = consultation.userId.trim();
+    if (doctorUid.isEmpty || patientUid.isEmpty || consultation.id.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تعذر فتح الاستشارة: بيانات الطبيب أو المريض غير مكتملة')),
+      );
+      return;
+    }
+
     // تحديث الحالة عند فتح المحادثة
     await _firestore.collection('consultations').doc(consultation.id).update({
       'hasNewMessage': false,
@@ -699,8 +711,8 @@ class _InstantConsultationScreenState extends State<InstantConsultationScreen> {
     Navigator.push(context, MaterialPageRoute(builder: (_) =>
         ConsultationScreen(
           consultationId: consultation.id,
-          doctorUid: consultation.doctorId ?? '',
-          patientUid: consultation.userId,
+          doctorUid: doctorUid,
+          patientUid: patientUid,
           doctorName: consultation.doctorName ?? '',
           patientName: consultation.userName ?? '',
           doctorImage: consultation.doctorImage ?? '',
@@ -713,6 +725,10 @@ class _InstantConsultationScreenState extends State<InstantConsultationScreen> {
   Future<void> _startConsultation(UserModel doctor) async {
     final user = _auth.currentUser;
     if (user == null) return;
+    if (doctor.uid.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تعذر بدء الاستشارة: بيانات الطبيب غير مكتملة')));
+      return;
+    }
     try {
       final userDataDoc = await _firestore.collection('users').doc(user.uid).get();
       final userData = userDataDoc.data() ?? {};

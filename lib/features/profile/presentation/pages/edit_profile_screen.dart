@@ -5,6 +5,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../../maps/presentation/pages/location_picker_screen.dart';
+
 class EditProfileScreen extends StatefulWidget {
   final String userId;
 
@@ -23,6 +25,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   final TextEditingController _genderController = TextEditingController();
   final TextEditingController _ageController = TextEditingController();
   final TextEditingController _workPlaceController = TextEditingController();
+  final TextEditingController _bookingFeeController = TextEditingController();
+  final TextEditingController _clinicAddressController = TextEditingController();
+
+  PickedDoctorLocation? _doctorLocation;
 
   bool _isLoading = true;
   bool _isSaving = false;
@@ -55,6 +61,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         _genderController.text = (data['gender'] ?? '').toString();
         _ageController.text = (data['age'] ?? '').toString();
         _workPlaceController.text = (data['workPlace'] ?? data['clinicName'] ?? '').toString();
+        _bookingFeeController.text = (data['bookingFee'] ?? data['consultationFee'] ?? data['sessionPrice'] ?? '').toString();
+        _clinicAddressController.text = (data['address'] ?? data['clinicAddress'] ?? '').toString();
+        final latitude = _toDouble(data['latitude']);
+        final longitude = _toDouble(data['longitude']);
+        if (latitude != null && longitude != null) {
+          _doctorLocation = PickedDoctorLocation(latitude: latitude, longitude: longitude, address: _clinicAddressController.text);
+        }
         _isDoctor = data['accountType'] == 'doctor';
         _photoURL = (data['photoURL'] ?? '').toString();
         _profileImageBase64 = (data['profileImageBase64'] ?? '').toString();
@@ -122,7 +135,21 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       };
 
       if (_isDoctor) {
-        updatedData['workPlace'] = _workPlaceController.text.trim();
+        final bookingFee = double.tryParse(_bookingFeeController.text.trim()) ?? 0;
+        final location = _doctorLocation;
+        updatedData.addAll({
+          'workPlace': _workPlaceController.text.trim(),
+          'clinicName': _workPlaceController.text.trim(),
+          'bookingFee': bookingFee,
+          'consultationFee': bookingFee,
+          'sessionPrice': bookingFee,
+          'minSessionPrice': bookingFee,
+          'maxSessionPrice': bookingFee,
+          'address': _clinicAddressController.text.trim(),
+          'clinicAddress': _clinicAddressController.text.trim(),
+          if (location != null) 'latitude': location.latitude,
+          if (location != null) 'longitude': location.longitude,
+        });
       }
 
       await _firestore.collection('users').doc(widget.userId).set(updatedData, SetOptions(merge: true));
@@ -149,6 +176,26 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
+
+  Future<void> _pickDoctorLocation() async {
+    final result = await Navigator.push<PickedDoctorLocation>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LocationPickerScreen(initialLocation: _doctorLocation),
+      ),
+    );
+    if (result == null || !mounted) return;
+    setState(() {
+      _doctorLocation = result;
+      _clinicAddressController.text = result.address;
+    });
+  }
+
+  double? _toDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '');
+  }
+
   @override
   void dispose() {
     _nameController.dispose();
@@ -156,6 +203,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _genderController.dispose();
     _ageController.dispose();
     _workPlaceController.dispose();
+    _bookingFeeController.dispose();
+    _clinicAddressController.dispose();
     super.dispose();
   }
 
@@ -165,7 +214,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       backgroundColor: _background,
       appBar: AppBar(
         backgroundColor: _background,
-        foregroundColor: _primary,
+        foregroundColor: Theme.of(context).colorScheme.onSurface,
         elevation: 0,
         centerTitle: true,
         title: const Text('تعديل الملف الشخصي'),
@@ -294,7 +343,28 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           ),
           if (_isDoctor) ...[
             const SizedBox(height: 12),
-            _buildField(_workPlaceController, 'مكان العمل', Icons.business_center_rounded, validator: (value) => value == null || value.isEmpty ? 'الرجاء إدخال مكان العمل' : null),
+            _buildField(_workPlaceController, 'مكان العمل / اسم العيادة', Icons.business_center_rounded, validator: (value) => value == null || value.isEmpty ? 'الرجاء إدخال مكان العمل' : null),
+            const SizedBox(height: 12),
+            _buildField(
+              _bookingFeeController,
+              'قيمة الحجز',
+              Icons.payments_rounded,
+              keyboardType: TextInputType.number,
+              validator: (value) {
+                final fee = double.tryParse((value ?? '').trim());
+                if (fee == null || fee < 0) return 'الرجاء إدخال قيمة حجز صحيحة';
+                return null;
+              },
+            ),
+            const SizedBox(height: 12),
+            _buildField(_clinicAddressController, 'عنوان العيادة', Icons.location_on_rounded, validator: (value) => value == null || value.isEmpty ? 'الرجاء إدخال عنوان العيادة' : null),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: _pickDoctorLocation,
+              icon: const Icon(Icons.map_rounded),
+              label: Text(_doctorLocation == null ? 'اختيار الموقع من الخريطة' : 'تعديل الموقع المحدد'),
+              style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 13), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+            ),
           ],
         ],
       ),

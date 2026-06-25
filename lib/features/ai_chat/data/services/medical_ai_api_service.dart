@@ -46,7 +46,7 @@ class MedicalAiApiService {
     String? apiKey,
     this.model = _geminiModel,
   })  : apiKey = apiKey ?? _resolveDefaultApiKey(),
-        _dio = dio ?? Dio();
+        _dio = dio ?? Dio(BaseOptions(connectTimeout: const Duration(seconds: 20), sendTimeout: const Duration(seconds: 30), receiveTimeout: const Duration(seconds: 45)));
 
   static String _resolveDefaultApiKey() {
     if (_geminiApiKey.trim().isNotEmpty) return _geminiApiKey.trim();
@@ -82,7 +82,7 @@ class MedicalAiApiService {
 
     if (useOpenRouter) {
       if (openRouterKey.isEmpty) {
-        return 'الخدمة غير متاحة حالياً، يرجى المحاولة مرة أخرى لاحقاً.';
+        throw StateError('OPENROUTER_API_KEY غير موجود. شغّل التطبيق باستخدام --dart-define=OPENROUTER_API_KEY=YOUR_KEY وتأكد أن AI_PROVIDER=openrouter.');
       }
       return _sendToOpenRouter(
         key: openRouterKey,
@@ -95,7 +95,7 @@ class MedicalAiApiService {
     }
 
     if (key.isEmpty) {
-      return 'الخدمة غير متاحة حالياً، يرجى المحاولة مرة أخرى لاحقاً.';
+      throw StateError('لم يتم ضبط مفتاح AI. استخدم GEMINI_API_KEY أو AI_PROVIDER=openrouter مع OPENROUTER_API_KEY.');
     }
 
     final geminiModels = _configuredModels(_geminiModels, fallback: model);
@@ -128,7 +128,7 @@ class MedicalAiApiService {
       lastFriendlyError = reply;
     }
 
-    return lastFriendlyError ?? 'الخدمة مشغولة حالياً، يرجى المحاولة بعد قليل.';
+    throw StateError(lastFriendlyError ?? 'فشل الاتصال بخدمة الذكاء الاصطناعي بدون تفاصيل إضافية. راجع سجلات الطلب والاستجابة.');
   }
 
   Future<String> _sendToGeminiModel({
@@ -187,7 +187,7 @@ class MedicalAiApiService {
 
       final reply = _extractGeminiReply(response.data);
       if (reply.isEmpty) {
-        return 'يرجى توضيح سؤالك بشكل أكبر حتى أتمكن من مساعدتك.';
+        throw StateError('Gemini أعاد استجابة فارغة. راجع السجلات وتأكد من صلاحية النموذج والمفتاح.');
       }
       return reply;
     } on DioException catch (e) {
@@ -279,6 +279,9 @@ class MedicalAiApiService {
       try {
         _debug('OpenRouter Request URL: $openRouterUrl');
         _debug('OpenRouter Request Model: $openRouterModel');
+        _debug('OpenRouter API Key Present: ${key.trim().isNotEmpty} length=${key.trim().length}');
+        _debug('OpenRouter Headers: Content-Type=application/json, Authorization=Bearer ***${key.length >= 4 ? key.substring(key.length - 4) : 'short'}, X-Title=Nabd Medical AI');
+        _debug('OpenRouter Request Payload: $payload');
 
         final response = await _dio.post(
           openRouterUrl,
@@ -297,26 +300,23 @@ class MedicalAiApiService {
 
         final reply = _extractOpenRouterReply(response.data);
         if (reply.isEmpty) {
-          lastFriendlyError = 'يرجى توضيح سؤالك بشكل أكبر حتى أتمكن من مساعدتك.';
+          lastFriendlyError = 'OpenRouter أعاد استجابة فارغة للنموذج $openRouterModel. Response: ${response.data}';
           continue;
         }
         if (!_shouldTryFallback(reply)) return reply;
         lastFriendlyError = reply;
       } on DioException catch (e) {
         lastFriendlyError = _formatDioError(e, serviceName: 'OpenRouter');
-        if (!_shouldTryFallback(lastFriendlyError)) return lastFriendlyError;
       } on SocketException catch (e) {
         _debug('OpenRouter SocketException: $e');
         lastFriendlyError = MedicalAiErrorHandler.friendlyMessage(e);
-        if (!_shouldTryFallback(lastFriendlyError)) return lastFriendlyError;
       } catch (e) {
         _debug('OpenRouter Unknown Error: $e');
         lastFriendlyError = MedicalAiErrorHandler.friendlyMessage(e);
-        if (!_shouldTryFallback(lastFriendlyError)) return lastFriendlyError;
       }
     }
 
-    return lastFriendlyError ?? 'الخدمة مشغولة حالياً، يرجى المحاولة بعد قليل.';
+    throw StateError(lastFriendlyError ?? 'فشل OpenRouter بدون تفاصيل إضافية. راجع السجلات.');
   }
 
 
@@ -442,7 +442,8 @@ class MedicalAiApiService {
     _debug('$serviceName Error Response: $responseBody');
     _debug('$serviceName Error Message: ${e.message}');
 
-    return MedicalAiErrorHandler.friendlyMessage(e);
+    final apiMessage = _extractApiErrorMessage(responseBody);
+    return '$serviceName فشل${statusCode == null ? '' : ' (HTTP $statusCode)')}. ${apiMessage.isNotEmpty ? 'تفاصيل المزود: $apiMessage' : 'رسالة Dio: ${e.message}'}';
   }
 
   String _formatAuthenticationError({

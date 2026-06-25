@@ -309,7 +309,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       ),
       extendBody: true,
-      floatingActionButton: currentUserModel!.isPatient
+      floatingActionButton: currentUserModel!.isPatient && _currentIndex != 2
           ? MedicalAiChatProvider.floatingButton(context)
           : null,
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
